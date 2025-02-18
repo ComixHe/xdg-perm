@@ -1,0 +1,11 @@
+[package]
+name = "xdp-perm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.5.30", features = ["derive"] }
+comfy-table = "7.1.4"
+serde = { version = "1.0.217", features = ["derive"] }
+tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread"] }
+zbus = { version = "5.5.0", default-features = false, features = ["tokio"] }
