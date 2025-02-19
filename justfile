@@ -1,3 +1,6 @@
+build:
+    cargo build
+
 lint:
     cargo fmt --all -- --check
     taplo format --check

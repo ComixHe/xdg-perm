@@ -1,7 +1,6 @@
-use std::{collections::HashMap, error::Error};
-
 use clap::{Args, Parser, Subcommand};
 use comfy_table::Table;
+use std::collections::HashMap;
 use zbus::{proxy, zvariant::OwnedValue, Connection};
 
 // Cli struct
@@ -27,8 +26,9 @@ enum Subcommands {
 
     /// Lookup Permissions
     Lookup(LookupArgs),
-    // /// Set Permissions
-    // Set(SetArgs),
+
+    /// Set Permissions
+    Set(SetArgs),
 }
 
 #[derive(Args, Debug)]
@@ -70,7 +70,24 @@ struct DeleteArgs {
     app: Option<String>,
 }
 
-//TODO: support setting permissions
+#[derive(Args, Debug)]
+struct SetArgs {
+    /// Whether to create the table if it does not exist
+    #[arg(short, long, default_value_t = false)]
+    create: bool,
+
+    /// The name of the table to use
+    table: String,
+
+    /// The resource ID to modify
+    id: String,
+
+    /// The application ID to modify
+    app: String,
+
+    /// The permissions to set
+    permissions: Vec<String>,
+}
 
 // custom DBus type
 
@@ -91,21 +108,13 @@ trait PermissionStore {
     fn get_permission(&self, table: &str, id: &str, app: &str) -> zbus::Result<Vec<String>>;
     fn list(&self, table: &str) -> zbus::Result<Vec<String>>;
     fn lookup(&self, table: &str, id: &str) -> zbus::Result<LookupResponse>;
-    fn set(
-        &self,
-        table: &str,
-        create: bool,
-        id: &str,
-        app_permissions: Vec<HashMap<String, Vec<String>>>,
-        data: OwnedValue,
-    ) -> zbus::Result<()>;
     fn set_permission(
         &self,
         table: &str,
         create: bool,
         id: &str,
         app: &str,
-        permissions: Vec<String>,
+        permissions: &[String],
     ) -> zbus::Result<()>;
     fn set_value(&self, create: bool, id: &str, data: OwnedValue) -> zbus::Result<()>;
 }
@@ -159,36 +168,68 @@ fn print_get_permission_response(response: &[String]) {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    let connection = Connection::session().await?;
-    let proxy = PermissionStoreProxy::new(&connection).await?;
+async fn main() {
+    let connection = match Connection::session().await {
+        Ok(connection) => connection,
+        Err(e) => {
+            eprintln!("Failed to connect: {e}");
+            return;
+        }
+    };
 
-    let server_version = proxy.version().await?;
+    let proxy = match PermissionStoreProxy::new(&connection).await {
+        Ok(proxy) => proxy,
+        Err(e) => {
+            eprintln!("Failed to create proxy: {e}");
+            return;
+        }
+    };
+
+    let server_version = match proxy.version().await {
+        Ok(version) => version,
+        Err(e) => {
+            eprintln!("Failed to get server version: {e}");
+            return;
+        }
+    };
+
     if server_version != PERMISSION_STORE_SPEC_VER {
-        return Err(format!(
-            "Server version {server_version} does not match expected version {PERMISSION_STORE_SPEC_VER}")
-        .into());
+        eprintln!("Server version {server_version} does not match expected version {PERMISSION_STORE_SPEC_VER}");
+        return;
     }
 
     let cli = Cli::parse();
     match &cli.command {
         Subcommands::Delete(args) => match delete_permission(&proxy, args).await {
             Ok(_) => println!("Permissions deleted successfully"),
-            Err(e) => return Err(e.into()),
+            Err(e) => eprintln!("failed to delete permissions: {e}"),
         },
         Subcommands::Get(GetArgs { table, id, app }) => {
-            let permissions = proxy.get_permission(table, id, app).await?;
-            print_get_permission_response(&permissions);
+            match proxy.get_permission(table, id, app).await {
+                Ok(permissions) => print_get_permission_response(&permissions),
+                Err(e) => eprintln!("failed to get permissions: {e}"),
+            }
         }
-        Subcommands::List(ListArgs { table }) => {
-            let ids = proxy.list(table).await?;
-            print_list_response(&ids);
-        }
-        Subcommands::Lookup(LookupArgs { table, id }) => {
-            let result = proxy.lookup(table, id).await?;
-            print_lookup_response(&result);
-        }
+        Subcommands::List(ListArgs { table }) => match proxy.list(table).await {
+            Ok(ids) => print_list_response(&ids),
+            Err(e) => eprintln!("failed to list permissions: {e}"),
+        },
+        Subcommands::Lookup(LookupArgs { table, id }) => match proxy.lookup(table, id).await {
+            Ok(result) => print_lookup_response(&result),
+            Err(e) => eprintln!("failed to lookup permissions: {e}"),
+        },
+        Subcommands::Set(args) => match proxy
+            .set_permission(
+                &args.table,
+                args.create,
+                &args.id,
+                &args.app,
+                &args.permissions,
+            )
+            .await
+        {
+            Ok(_) => println!("Permissions set successfully"),
+            Err(e) => eprintln!("failed to set permissions: {e}"),
+        },
     };
-
-    Ok(())
 }
