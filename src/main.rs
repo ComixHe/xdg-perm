@@ -1,7 +1,7 @@
 use clap::{Args, Parser, Subcommand};
 use comfy_table::Table;
 use std::collections::HashMap;
-use zbus::{proxy, zvariant::OwnedValue, Connection};
+use zbus::{Connection, proxy, zvariant::OwnedValue};
 
 // Cli struct
 
@@ -194,7 +194,9 @@ async fn main() {
     };
 
     if server_version != PERMISSION_STORE_SPEC_VER {
-        eprintln!("Server version {server_version} does not match expected version {PERMISSION_STORE_SPEC_VER}");
+        eprintln!(
+            "Server version {server_version} does not match expected version {PERMISSION_STORE_SPEC_VER}"
+        );
         return;
     }
 
